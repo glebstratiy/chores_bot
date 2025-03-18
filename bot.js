@@ -31,9 +31,9 @@ const taskCreationState = new Map();
 
 // Функция для автоматического определения участников группы
 bot.onText(/\/sync_users/, async (msg) => {
-    if (msg.from.id !== ADMIN_ID) {
+    if (msg.from.first_name !== "глеб") {
         return bot.sendMessage(msg.chat.id, '⛔ У вас нет прав на выполнение этой команды.');
-    }
+    }    
     if (msg.chat.id !== Number(GROUP_ID)) return;
 
     try {
@@ -61,6 +61,9 @@ bot.onText(/\/sync_users/, async (msg) => {
 
 // Добавление задачи
 bot.onText(/\/add_task/, (msg) => {
+    if (msg.from.first_name !== "глеб") {
+        return bot.sendMessage(msg.chat.id, '⛔ У вас нет прав на выполнение этой команды.');
+    }  
     taskCreationState.set(msg.from.id, { step: 1 });
     bot.sendMessage(msg.chat.id, '📝 Введите название задачи:');
 });
@@ -103,6 +106,9 @@ bot.on('callback_query', async (callbackQuery) => {
 
 // Удаление задачи с выбором из списка
 bot.onText(/\/delete_task/, async (msg) => {
+    if (msg.from.first_name !== "глеб") {
+        return bot.sendMessage(msg.chat.id, '⛔ У вас нет прав на выполнение этой команды.');
+    }  
     const tasks = await Task.find();
     if (tasks.length === 0) return bot.sendMessage(msg.chat.id, '❌ Нет доступных задач для удаления.');
 
@@ -122,6 +128,9 @@ bot.on('callback_query', async (callbackQuery) => {
 
 // Изменение задачи с выбором из списка
 bot.onText(/\/edit_task/, async (msg) => {
+    if (msg.from.first_name !== "глеб") {
+        return bot.sendMessage(msg.chat.id, '⛔ У вас нет прав на выполнение этой команды.');
+    }  
     const tasks = await Task.find();
     if (tasks.length === 0) return bot.sendMessage(msg.chat.id, '❌ Нет доступных задач для редактирования.');
 
@@ -210,9 +219,9 @@ bot.onText(/\/done/, async (msg) => {
 
 // Ручное перераспределение задач
 bot.onText(/\/reset_tasks/, async (msg) => {
-    if (msg.from.id !== ADMIN_ID) {
+    if (msg.from.first_name !== "глеб") {
         return bot.sendMessage(msg.chat.id, '⛔ У вас нет прав на выполнение этой команды.');
-    }
+    }  
     await assignTasks();
     bot.sendMessage(GROUP_ID, '🔄 Задачи были сброшены и распределены заново!');
 });
