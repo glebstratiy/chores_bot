@@ -196,8 +196,6 @@ cron.schedule('0 18 * * 5', async () => {
     await assignTasks();
 }, {
     timezone: "Europe/Kiev"
-}, {
-    timezone: "Europe/Kiev"
 });
 
 // Автообновление статуса задач в понедельник в 00:00
