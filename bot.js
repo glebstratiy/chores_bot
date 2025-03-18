@@ -192,8 +192,10 @@ ${assignedTasks.join('\n')}`, { parse_mode: 'Markdown' });
 }
 
 // Автоматическое назначение задач по пятницам в 18:00
-cron.schedule('19 21 * * 2', async () => {
+cron.schedule('0 18 * * 5', async () => {
     await assignTasks();
+}, {
+    timezone: "Europe/Kiev"
 }, {
     timezone: "Europe/Kiev"
 });
@@ -206,6 +208,21 @@ cron.schedule('0 0 * * 1', async () => {
     }
     await Task.updateMany({}, { completed: false, assignedTo: null });
     bot.sendMessage(GROUP_ID, '⏳ Все задачи сброшены, новая неделя началась!');
+}, {
+    timezone: "Europe/Kiev"
+});
+
+// 🕛 Сброс очков в 00:00 первого дня каждого месяца
+cron.schedule('0 0 1 * *', async () => {
+    try {
+        await User.updateMany({}, { points: 0 });
+        console.log('✅ Все очки сброшены до 0!');
+        bot.sendMessage(GROUP_ID, '🔄 Новый месяц! Все очки сброшены до 0.');
+    } catch (error) {
+        console.error('❌ Ошибка при сбросе очков:', error);
+    }
+}, {
+    timezone: "Europe/Kiev"
 });
 
 // Подтверждение выполнения задачи
