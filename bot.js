@@ -5,7 +5,7 @@ const cron = require('node-cron');
 
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 const GROUP_ID = process.env.GROUP_ID;
-const ADMIN_ID = process.env.ADMIN_ID;
+
 
 mongoose.connect('mongodb+srv://admin:admin@cluster0.clzvh.mongodb.net/');
 
@@ -231,7 +231,19 @@ bot.onText(/\/status/, async (msg) => {
     const tasks = await Task.find();
     if (tasks.length === 0) return bot.sendMessage(msg.chat.id, '❌ Нет активных задач.');
     
-    const statusList = tasks.map(task => `📌 ${task.name} – ${task.completed ? '✅ Выполнено' : '❌ Не выполнено'} (${task.assignedTo})`).join('\n');
+    // Получаем всех пользователей, чтобы создать соответствие userId -> name
+    const users = await User.find();
+    const userMap = {};
+    users.forEach(user => {
+        userMap[user.userId] = user.name;
+    });
+
+    // Формируем список задач с именами пользователей
+    const statusList = tasks.map(task => {
+        const assignedName = userMap[task.assignedTo] || "❓ Неизвестный";
+        return `📌 ${task.name} – ${task.completed ? '✅ Выполнено' : '❌ Не выполнено'} (👤 ${assignedName})`;
+    }).join('\n');
+
     bot.sendMessage(GROUP_ID, `📋 *Статус задач:*\n\n${statusList}`, { parse_mode: 'Markdown' });
 });
 
