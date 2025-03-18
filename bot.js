@@ -192,8 +192,10 @@ ${assignedTasks.join('\n')}`, { parse_mode: 'Markdown' });
 }
 
 // Автоматическое назначение задач по пятницам в 18:00
-cron.schedule('15 21 * * 2', async () => {
+cron.schedule('19 21 * * 2', async () => {
     await assignTasks();
+}, {
+    timezone: "Europe/Kiev"
 });
 
 // Автообновление статуса задач в понедельник в 00:00
