@@ -171,18 +171,32 @@ async function assignTasks() {
     const tasks = await Task.find();
     if (users.length === 0 || tasks.length === 0) return;
 
+    const assignedTaskNames = new Set(); // Сюда будем добавлять названия уже назначенных задач
     let assignedTasks = [];
+
     for (const user of users) {
-        // Исключаем последнюю назначенную задачу
-        let availableTasks = tasks.filter(task => task.name !== user.previousTask);
-        if (availableTasks.length === 0) availableTasks = tasks; // Если нет новых задач, даем любую
+        // Фильтруем задачи: исключаем предыдущую и уже назначенные в этом проходе
+        let availableTasks = tasks.filter(task =>
+            task.name !== user.previousTask && !assignedTaskNames.has(task.name)
+        );
+
+        // Если ничего не осталось — берём любую ещё не выданную (может совпадать с previousTask)
+        if (availableTasks.length === 0) {
+            availableTasks = tasks.filter(task => !assignedTaskNames.has(task.name));
+        }
+
+        // Если совсем нет доступных задач, пропускаем пользователя
+        if (availableTasks.length === 0) {
+            assignedTasks.push(`⚠️ Нет доступной задачи для ${user.name}`);
+            continue;
+        }
 
         const task = availableTasks[Math.floor(Math.random() * availableTasks.length)];
-        await Task.findOneAndUpdate({ name: task.name }, { assignedTo: user.userId, completed: false });
 
-        // Обновляем поле previousTask
+        await Task.findOneAndUpdate({ name: task.name }, { assignedTo: user.userId, completed: false });
         await User.findOneAndUpdate({ userId: user.userId }, { previousTask: task.name });
-        
+
+        assignedTaskNames.add(task.name); // Добавляем в список уже назначенных
         assignedTasks.push(`📌 ${task.name} – ${user.name}`);
     }
 
@@ -190,6 +204,7 @@ async function assignTasks() {
 
 ${assignedTasks.join('\n')}`, { parse_mode: 'Markdown' });
 }
+
 
 // Автоматическое назначение задач по пятницам в 18:00
 cron.schedule('0 18 * * 5', async () => {
