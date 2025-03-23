@@ -278,39 +278,35 @@ bot.on('callback_query', async (query) => {
     // ✅ Обработка кнопки "Вещь закончилась"
     if (data.startsWith('outofstock_')) {
         const itemId = data.replace('outofstock_', '');
-
-        // Обновляем только если вещь ещё в наличии
-        const item = await Item.findOneAndUpdate(
-            { _id: itemId, inStock: true },
-            { $set: { inStock: false } },
-            { new: true }
-        );
-
+    
+        const item = await Item.findOne({ _id: itemId, inStock: true });
         if (!item) {
             return bot.answerCallbackQuery(query.id, { text: '❌ Уже обработано или предмет не найден.' });
         }
-
-        // Определяем следующего покупателя по кругу
+    
         const lastIndex = users.findIndex(u => u.userId === item.lastBoughtBy);
         const nextBuyer = lastIndex === -1 || lastIndex === users.length - 1
             ? users[0]
             : users[lastIndex + 1];
-
-        item.lastBoughtBy = nextBuyer.userId;
-        await item.save();
-
+    
+        const updated = await Item.findOneAndUpdate(
+            { _id: itemId, inStock: true },
+            { $set: { inStock: false, lastBoughtBy: nextBuyer.userId } },
+            { new: true }
+        );
+    
         try {
             await bot.deleteMessage(chatId, msgId);
         } catch (err) {
             console.warn('⚠️ Не удалось удалить сообщение с кнопками:', err.message);
         }
-
-        await bot.sendMessage(GROUP_ID, `📢 *${item.name}* закончился!\n🛒 Купить должен: *${nextBuyer.name}*`, {
+    
+        await bot.sendMessage(GROUP_ID, `📢 *${updated.name}* закончился!\n🛒 Купить должен: *${nextBuyer.name}*`, {
             parse_mode: 'Markdown'
         });
-
+    
         return bot.answerCallbackQuery(query.id, { text: '✅ Отмечено как "не в наличии"' });
-    }
+    }    
 
     // ✅ Обработка кнопки "Я купил"
     if (data.startsWith('markbought_')) {
