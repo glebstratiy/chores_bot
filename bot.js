@@ -207,8 +207,8 @@ bot.onText(/\/notify_out_of_stock/, async (msg) => {
     if (!items.length) return bot.sendMessage(msg.chat.id, '✅ Все предметы в наличии.');
 
     const inlineKeyboard = items.map(item => {
-        return [{ text: item.name, callback_data: `outofstock_${item.name}` }];
-    });
+        return [{ text: item.name, callback_data: `outofstock_${item._id}` }];
+    });    
 
     bot.sendMessage(msg.chat.id, '🧼 Что закончилось?', {
         reply_markup: {
@@ -254,8 +254,8 @@ bot.onText(/\/mark_bought/, async (msg) => {
     }
 
     const keyboard = items.map(item => {
-        return [{ text: item.name, callback_data: `markbought_${item.name}` }];
-    });
+        return [{ text: item.name, callback_data: `markbought_${item._id}` }];
+    });    
 
     bot.sendMessage(msg.chat.id, 'Что ты купил?', {
         reply_markup: {
@@ -272,16 +272,16 @@ bot.on('callback_query', async (query) => {
 
     const users = await User.find().sort({ userId: 1 });
     if (!users.length) {
-        return bot.sendMessage(chatId, '❌ Нет пользователей.');
+        return bot.sendMessage(chatId, '❌ Нет зарегистрированных пользователей.');
     }
 
-    // 👉 notify_out_of_stock
+    // ✅ Обработка кнопки "Вещь закончилась"
     if (data.startsWith('outofstock_')) {
-        const itemName = data.replace('outofstock_', '');
+        const itemId = data.replace('outofstock_', '');
 
-        // Безопасное обновление только если вещь в наличии
+        // Обновляем только если вещь ещё в наличии
         const item = await Item.findOneAndUpdate(
-            { name: itemName, inStock: true },
+            { _id: itemId, inStock: true },
             { $set: { inStock: false } },
             { new: true }
         );
@@ -290,6 +290,7 @@ bot.on('callback_query', async (query) => {
             return bot.answerCallbackQuery(query.id, { text: '❌ Уже обработано или предмет не найден.' });
         }
 
+        // Определяем следующего покупателя по кругу
         const lastIndex = users.findIndex(u => u.userId === item.lastBoughtBy);
         const nextBuyer = lastIndex === -1 || lastIndex === users.length - 1
             ? users[0]
@@ -301,22 +302,22 @@ bot.on('callback_query', async (query) => {
         try {
             await bot.deleteMessage(chatId, msgId);
         } catch (err) {
-            console.warn('❗ Не удалось удалить сообщение:', err.message);
+            console.warn('⚠️ Не удалось удалить сообщение с кнопками:', err.message);
         }
 
         await bot.sendMessage(GROUP_ID, `📢 *${item.name}* закончился!\n🛒 Купить должен: *${nextBuyer.name}*`, {
             parse_mode: 'Markdown'
         });
 
-        return bot.answerCallbackQuery(query.id);
+        return bot.answerCallbackQuery(query.id, { text: '✅ Отмечено как "не в наличии"' });
     }
 
-    // 👉 mark_bought
+    // ✅ Обработка кнопки "Я купил"
     if (data.startsWith('markbought_')) {
-        const itemName = data.replace('markbought_', '');
+        const itemId = data.replace('markbought_', '');
 
         const item = await Item.findOneAndUpdate(
-            { name: itemName, inStock: false },
+            { _id: itemId, inStock: false },
             { $set: { inStock: true } },
             { new: true }
         );
@@ -328,19 +329,20 @@ bot.on('callback_query', async (query) => {
         try {
             await bot.deleteMessage(chatId, msgId);
         } catch (err) {
-            console.warn('❗ Не удалось удалить сообщение:', err.message);
+            console.warn('⚠️ Не удалось удалить сообщение с кнопками:', err.message);
         }
 
         await bot.sendMessage(GROUP_ID, `✅ ${query.from.first_name} купил *${item.name}*`, {
             parse_mode: 'Markdown'
         });
 
-        return bot.answerCallbackQuery(query.id);
+        return bot.answerCallbackQuery(query.id, { text: '✅ Отмечено как куплено' });
     }
 
-    // Если это неизвестная кнопка
-    bot.answerCallbackQuery(query.id, { text: '🤷 Неверное действие.' });
+    // 📛 Непонятное действие
+    bot.answerCallbackQuery(query.id, { text: '🤷 Неизвестная кнопка' });
 });
+
 
 
 module.exports = bot;
