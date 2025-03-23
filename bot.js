@@ -9,6 +9,18 @@ const GROUP_ID = process.env.GROUP_ID;
 
 await mongoose.connect('mongodb+srv://admin:admin@cluster0.clzvh.mongodb.net/');
 
+bot.setMyCommands([
+    { command: '/sync_users', description: 'Синхронизировать участников' },
+    { command: '/done', description: 'Подтвердить выполнение задачи' },
+    { command: '/reset_tasks', description: 'Перераспределить задачи' },
+    { command: '/status', description: 'Статус задач' },
+    { command: '/points', description: 'Рейтинг пользователей' },
+    { command: '/notify_out_of_stock', description: 'Сообщить о закончившейся вещи' },
+    { command: '/check_stock', description: 'Показать, что в наличии, а что нет' },
+    { command: '/mark_bought', description: 'Отметить, что вещь куплена' }
+]);
+
+
 // Схема пользователя
 const UserSchema = new mongoose.Schema({
     userId: Number,
