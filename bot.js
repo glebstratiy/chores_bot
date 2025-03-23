@@ -7,7 +7,7 @@ const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 const GROUP_ID = process.env.GROUP_ID;
 
 
-mongoose.connect('mongodb+srv://admin:admin@cluster0.clzvh.mongodb.net/');
+await mongoose.connect('mongodb+srv://admin:admin@cluster0.clzvh.mongodb.net/');
 
 // Схема пользователя
 const UserSchema = new mongoose.Schema({
@@ -17,6 +17,14 @@ const UserSchema = new mongoose.Schema({
     previousTask: { type: String, default: null } // Храним последнюю задачу
 });
 const User = mongoose.model('User', UserSchema);
+
+const ItemSchema = new mongoose.Schema({
+    name: String,
+    inStock: { type: Boolean, default: true },
+    lastBoughtBy: { type: Number, default: null }
+});
+const Item = mongoose.model('Item', ItemSchema);
+
 
 // Схема задач с добавлением сложности
 const TaskSchema = new mongoose.Schema({
@@ -56,112 +64,6 @@ bot.onText(/\/sync_users/, async (msg) => {
     } catch (err) {
         console.error('Ошибка при получении участников группы:', err);
         bot.sendMessage(GROUP_ID, '❌ Ошибка при синхронизации участников.');
-    }
-});
-
-// Добавление задачи
-bot.onText(/\/add_task/, (msg) => {
-    if (msg.from.first_name !== "глеб") {
-        return bot.sendMessage(msg.chat.id, '⛔ У вас нет прав на выполнение этой команды.');
-    }  
-    taskCreationState.set(msg.from.id, { step: 1 });
-    bot.sendMessage(msg.chat.id, '📝 Введите название задачи:');
-});
-
-// Обработка сообщений для ввода названия задачи
-bot.on('message', async (msg) => {
-    const userState = taskCreationState.get(msg.from.id);
-    if (!userState) return;
-
-    if (userState.step === 1) {
-        userState.taskName = msg.text;
-        userState.step = 2;
-        bot.sendMessage(msg.chat.id, '📌 Выберите сложность:', {
-            reply_markup: {
-                inline_keyboard: [
-                    [
-                        { text: '🟢 Легко', callback_data: 'easy' },
-                        { text: '🟠 Средне', callback_data: 'medium' },
-                        { text: '🔴 Сложно', callback_data: 'hard' }
-                    ]
-                ]
-            }
-        });
-    }
-});
-
-// Обработка выбора сложности
-bot.on('callback_query', async (callbackQuery) => {
-    const userId = callbackQuery.from.id;
-    const userState = taskCreationState.get(userId);
-    if (!userState || userState.step !== 2) return;
-
-    const difficulty = callbackQuery.data;
-    const taskName = userState.taskName;
-
-    await Task.create({ name: taskName, difficulty });
-    bot.sendMessage(GROUP_ID, `✅ Задача "${taskName}" добавлена с уровнем сложности "${difficulty}"!`);
-    taskCreationState.delete(userId);
-});
-
-// Удаление задачи с выбором из списка
-bot.onText(/\/delete_task/, async (msg) => {
-    if (msg.from.first_name !== "глеб") {
-        return bot.sendMessage(msg.chat.id, '⛔ У вас нет прав на выполнение этой команды.');
-    }  
-    const tasks = await Task.find();
-    if (tasks.length === 0) return bot.sendMessage(msg.chat.id, '❌ Нет доступных задач для удаления.');
-
-    const keyboard = tasks.map(task => [{ text: task.name, callback_data: `delete_${task.name}` }]);
-    bot.sendMessage(msg.chat.id, '🗑 Выберите задачу для удаления:', {
-        reply_markup: { inline_keyboard: keyboard }
-    });
-});
-
-bot.on('callback_query', async (callbackQuery) => {
-    if (callbackQuery.data.startsWith('delete_')) {
-        const taskName = callbackQuery.data.replace('delete_', '');
-        await Task.findOneAndDelete({ name: taskName });
-        bot.sendMessage(GROUP_ID, `✅ Задача "${taskName}" удалена!`);
-    }
-});
-
-// Изменение задачи с выбором из списка
-bot.onText(/\/edit_task/, async (msg) => {
-    if (msg.from.first_name !== "глеб") {
-        return bot.sendMessage(msg.chat.id, '⛔ У вас нет прав на выполнение этой команды.');
-    }  
-    const tasks = await Task.find();
-    if (tasks.length === 0) return bot.sendMessage(msg.chat.id, '❌ Нет доступных задач для редактирования.');
-
-    const keyboard = tasks.map(task => [{ text: task.name, callback_data: `edit_${task.name}` }]);
-    bot.sendMessage(msg.chat.id, '✏️ Выберите задачу для редактирования:', {
-        reply_markup: { inline_keyboard: keyboard }
-    });
-});
-
-bot.on('callback_query', async (callbackQuery) => {
-    if (callbackQuery.data.startsWith('edit_')) {
-        const taskName = callbackQuery.data.replace('edit_', '');
-        bot.sendMessage(callbackQuery.message.chat.id, `🔧 Выберите новую сложность для "${taskName}":`, {
-            reply_markup: {
-                inline_keyboard: [
-                    [
-                        { text: '🟢 Легко', callback_data: `set_easy_${taskName}` },
-                        { text: '🟠 Средне', callback_data: `set_medium_${taskName}` },
-                        { text: '🔴 Сложно', callback_data: `set_hard_${taskName}` }
-                    ]
-                ]
-            }
-        });
-    }
-});
-
-bot.on('callback_query', async (callbackQuery) => {
-    if (callbackQuery.data.startsWith('set_')) {
-        const [_, difficulty, taskName] = callbackQuery.data.split('_');
-        await Task.findOneAndUpdate({ name: taskName }, { difficulty });
-        bot.sendMessage(GROUP_ID, `✅ Сложность задачи "${taskName}" изменена на "${difficulty}"!`);
     }
 });
 
@@ -287,5 +189,146 @@ bot.onText(/\/points/, async (msg) => {
     const pointsList = users.map(user => `👤 ${user.name}: ${user.points} баллов`).join('\n');
     bot.sendMessage(GROUP_ID, `🏆 *Рейтинг пользователей:*\n\n${pointsList}`, { parse_mode: 'Markdown' });
 });
+
+bot.onText(/\/notify_out_of_stock/, async (msg) => {
+    const items = await Item.find({ inStock: true });
+    if (!items.length) return bot.sendMessage(msg.chat.id, '✅ Все предметы в наличии.');
+
+    const inlineKeyboard = items.map(item => {
+        return [{ text: item.name, callback_data: `outofstock_${item.name}` }];
+    });
+
+    bot.sendMessage(msg.chat.id, '🧼 Что закончилось?', {
+        reply_markup: {
+            inline_keyboard: inlineKeyboard
+        }
+    });
+});
+
+bot.onText(/\/check_stock/, async (msg) => {
+    const items = await Item.find();
+    const users = await User.find().sort({ userId: 1 });
+    if (!users.length) return bot.sendMessage(msg.chat.id, '❌ Нет пользователей.');
+    if (!items.length) return bot.sendMessage(msg.chat.id, '❌ Нет вещей.');
+
+    const userMap = {};
+    users.forEach(u => userMap[u.userId] = u.name);
+
+    const inStockList = items
+        .filter(item => item.inStock)
+        .map(item => `✅ ${item.name} (последний покупал: ${userMap[item.lastBoughtBy] || '—'})`);
+
+    const outOfStockList = items
+        .filter(item => !item.inStock)
+        .map(item => {
+            const lastIndex = users.findIndex(u => u.userId === item.lastBoughtBy);
+            const nextBuyer = lastIndex === -1 || lastIndex === users.length - 1
+                ? users[0]
+                : users[lastIndex + 1];
+            return `❌ ${item.name} – должен купить: *${nextBuyer.name}*`;
+        });
+
+    const message = `📦 *Наличие вещей:*\n\n${inStockList.join('\n') || '—'}
+
+🛒 *Нужно купить:*\n\n${outOfStockList.join('\n') || '—'}`;
+
+    bot.sendMessage(msg.chat.id, message, { parse_mode: 'Markdown' });
+});
+
+bot.onText(/\/mark_bought/, async (msg) => {
+    const items = await Item.find({ inStock: false });
+    if (!items.length) {
+        return bot.sendMessage(msg.chat.id, '✅ Все вещи уже куплены!');
+    }
+
+    const keyboard = items.map(item => {
+        return [{ text: item.name, callback_data: `markbought_${item.name}` }];
+    });
+
+    bot.sendMessage(msg.chat.id, 'Что ты купил?', {
+        reply_markup: {
+            inline_keyboard: keyboard
+        }
+    });
+});
+
+bot.on('callback_query', async (query) => {
+    const userId = query.from.id;
+    const chatId = query.message.chat.id;
+    const msgId = query.message.message_id;
+    const data = query.data;
+
+    const users = await User.find().sort({ userId: 1 });
+    if (!users.length) {
+        return bot.sendMessage(chatId, '❌ Нет пользователей.');
+    }
+
+    // 👉 notify_out_of_stock
+    if (data.startsWith('outofstock_')) {
+        const itemName = data.replace('outofstock_', '');
+
+        // Безопасное обновление только если вещь в наличии
+        const item = await Item.findOneAndUpdate(
+            { name: itemName, inStock: true },
+            { $set: { inStock: false } },
+            { new: true }
+        );
+
+        if (!item) {
+            return bot.answerCallbackQuery(query.id, { text: '❌ Уже обработано или предмет не найден.' });
+        }
+
+        const lastIndex = users.findIndex(u => u.userId === item.lastBoughtBy);
+        const nextBuyer = lastIndex === -1 || lastIndex === users.length - 1
+            ? users[0]
+            : users[lastIndex + 1];
+
+        item.lastBoughtBy = nextBuyer.userId;
+        await item.save();
+
+        try {
+            await bot.deleteMessage(chatId, msgId);
+        } catch (err) {
+            console.warn('❗ Не удалось удалить сообщение:', err.message);
+        }
+
+        await bot.sendMessage(GROUP_ID, `📢 *${item.name}* закончился!\n🛒 Купить должен: *${nextBuyer.name}*`, {
+            parse_mode: 'Markdown'
+        });
+
+        return bot.answerCallbackQuery(query.id);
+    }
+
+    // 👉 mark_bought
+    if (data.startsWith('markbought_')) {
+        const itemName = data.replace('markbought_', '');
+
+        const item = await Item.findOneAndUpdate(
+            { name: itemName, inStock: false },
+            { $set: { inStock: true } },
+            { new: true }
+        );
+
+        if (!item) {
+            return bot.answerCallbackQuery(query.id, { text: '❌ Уже куплено или не найдено.' });
+        }
+
+        try {
+            await bot.deleteMessage(chatId, msgId);
+        } catch (err) {
+            console.warn('❗ Не удалось удалить сообщение:', err.message);
+        }
+
+        await bot.sendMessage(GROUP_ID, `✅ ${query.from.first_name} купил *${item.name}*`, {
+            parse_mode: 'Markdown'
+        });
+
+        return bot.answerCallbackQuery(query.id);
+    }
+
+    // Если это неизвестная кнопка
+    bot.answerCallbackQuery(query.id, { text: '🤷 Неверное действие.' });
+});
+
 
 module.exports = bot;
