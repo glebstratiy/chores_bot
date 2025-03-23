@@ -33,7 +33,8 @@ const User = mongoose.model('User', UserSchema);
 const ItemSchema = new mongoose.Schema({
     name: String,
     inStock: { type: Boolean, default: true },
-    lastBoughtBy: { type: Number, default: null }
+    buyerQueue: [Number],
+    currentBuyerIndex: { type: Number, default: 0 }
 });
 const Item = mongoose.model('Item', ItemSchema);
 
@@ -53,13 +54,13 @@ const taskCreationState = new Map();
 bot.onText(/\/sync_users/, async (msg) => {
     if (msg.from.first_name !== "глеб") {
         return bot.sendMessage(msg.chat.id, '⛔ У вас нет прав на выполнение этой команды.');
-    }    
+    }
     if (msg.chat.id !== Number(GROUP_ID)) return;
 
     try {
         const chatMembers = await bot.getChatAdministrators(GROUP_ID);
         let addedUsers = [];
-        
+
         for (const member of chatMembers) {
             if (!member.user.is_bot) {
                 await User.findOneAndUpdate(
@@ -70,7 +71,7 @@ bot.onText(/\/sync_users/, async (msg) => {
                 addedUsers.push(member.user.first_name);
             }
         }
-        
+
         const userList = addedUsers.length > 0 ? addedUsers.join(', ') : 'Нет новых участников';
         bot.sendMessage(GROUP_ID, `✅ Участники группы синхронизированы! Добавлены: ${userList}`);
     } catch (err) {
@@ -157,7 +158,7 @@ bot.onText(/\/done/, async (msg) => {
     const userId = msg.from.id;
     const task = await Task.findOne({ assignedTo: userId, completed: false });
     if (!task) return bot.sendMessage(msg.chat.id, '❌ У вас нет незавершенных задач!');
-    
+
     await Task.findOneAndUpdate({ assignedTo: userId, completed: false }, { completed: true });
     await User.findOneAndUpdate({ userId }, { $inc: { points: 1 } });
     bot.sendMessage(GROUP_ID, `✅ ${msg.from.first_name} выполнил задачу: *${task.name}*! (+1 балл)`, { parse_mode: 'Markdown' });
@@ -167,7 +168,7 @@ bot.onText(/\/done/, async (msg) => {
 bot.onText(/\/reset_tasks/, async (msg) => {
     if (msg.from.first_name !== "глеб") {
         return bot.sendMessage(msg.chat.id, '⛔ У вас нет прав на выполнение этой команды.');
-    }  
+    }
     await assignTasks();
     bot.sendMessage(GROUP_ID, '🔄 Задачи были сброшены и распределены заново!');
 });
@@ -176,7 +177,7 @@ bot.onText(/\/reset_tasks/, async (msg) => {
 bot.onText(/\/status/, async (msg) => {
     const tasks = await Task.find();
     if (tasks.length === 0) return bot.sendMessage(msg.chat.id, '❌ Нет активных задач.');
-    
+
     // Получаем всех пользователей, чтобы создать соответствие userId -> name
     const users = await User.find();
     const userMap = {};
@@ -197,7 +198,7 @@ bot.onText(/\/status/, async (msg) => {
 bot.onText(/\/points/, async (msg) => {
     const users = await User.find().sort({ points: -1 });
     if (users.length === 0) return bot.sendMessage(msg.chat.id, '❌ Нет пользователей в системе.');
-    
+
     const pointsList = users.map(user => `👤 ${user.name}: ${user.points} баллов`).join('\n');
     bot.sendMessage(GROUP_ID, `🏆 *Рейтинг пользователей:*\n\n${pointsList}`, { parse_mode: 'Markdown' });
 });
@@ -208,7 +209,7 @@ bot.onText(/\/notify_out_of_stock/, async (msg) => {
 
     const inlineKeyboard = items.map(item => {
         return [{ text: item.name, callback_data: `outofstock_${item._id}` }];
-    });    
+    });
 
     bot.sendMessage(msg.chat.id, '🧼 Что закончилось?', {
         reply_markup: {
@@ -219,7 +220,7 @@ bot.onText(/\/notify_out_of_stock/, async (msg) => {
 
 bot.onText(/\/check_stock/, async (msg) => {
     const items = await Item.find();
-    const users = await User.find().sort({ userId: 1 });
+    const users = await User.find();
     if (!users.length) return bot.sendMessage(msg.chat.id, '❌ Нет пользователей.');
     if (!items.length) return bot.sendMessage(msg.chat.id, '❌ Нет вещей.');
 
@@ -228,16 +229,23 @@ bot.onText(/\/check_stock/, async (msg) => {
 
     const inStockList = items
         .filter(item => item.inStock)
-        .map(item => `✅ ${item.name} (последний покупал: ${userMap[item.lastBoughtBy] || '—'})`);
+        .map(item => {
+            if (!item.buyerQueue || item.buyerQueue.length === 0) {
+                return `✅ ${item.name} (очередь не задана)`;
+            }
+            const prevIndex = (item.currentBuyerIndex - 1 + item.buyerQueue.length) % item.buyerQueue.length;
+            const prevBuyer = userMap[item.buyerQueue[prevIndex]] || '—';
+            return `✅ ${item.name} (последний покупал: ${prevBuyer})`;
+        });
 
     const outOfStockList = items
         .filter(item => !item.inStock)
         .map(item => {
-            const lastIndex = users.findIndex(u => u.userId === item.lastBoughtBy);
-            const nextBuyer = lastIndex === -1 || lastIndex === users.length - 1
-                ? users[0]
-                : users[lastIndex + 1];
-            return `❌ ${item.name} – должен купить: *${nextBuyer.name}*`;
+            if (!item.buyerQueue || item.buyerQueue.length === 0) {
+                return `❌ ${item.name} – очередь не задана`;
+            }
+            const nextBuyer = userMap[item.buyerQueue[item.currentBuyerIndex]] || '—';
+            return `❌ ${item.name} – должен купить: *${nextBuyer}*`;
         });
 
     const message = `📦 *Наличие вещей:*\n\n${inStockList.join('\n') || '—'}
@@ -255,7 +263,7 @@ bot.onText(/\/mark_bought/, async (msg) => {
 
     const keyboard = items.map(item => {
         return [{ text: item.name, callback_data: `markbought_${item._id}` }];
-    });    
+    });
 
     bot.sendMessage(msg.chat.id, 'Что ты купил?', {
         reply_markup: {
@@ -270,57 +278,69 @@ bot.on('callback_query', async (query) => {
     const msgId = query.message.message_id;
     const data = query.data;
 
-    const users = await User.find().sort({ userId: 1 });
+    const users = await User.find();
     if (!users.length) {
         return bot.sendMessage(chatId, '❌ Нет зарегистрированных пользователей.');
     }
 
-    // ✅ Обработка кнопки "Вещь закончилась"
+    // 🧼 Обработка кнопки "Вещь закончилась"
     if (data.startsWith('outofstock_')) {
         const itemId = data.replace('outofstock_', '');
-    
+
         const item = await Item.findOne({ _id: itemId, inStock: true });
-        if (!item) {
-            return bot.answerCallbackQuery(query.id, { text: '❌ Уже обработано или предмет не найден.' });
+        if (!item || !Array.isArray(item.buyerQueue)) {
+            return bot.answerCallbackQuery(query.id, { text: '❌ Предмет не найден или очередь пуста.' });
         }
-    
-        const lastIndex = users.findIndex(u => u.userId === item.lastBoughtBy);
-        const nextBuyer = lastIndex === -1 || lastIndex === users.length - 1
-            ? users[0]
-            : users[lastIndex + 1];
-    
-        const updated = await Item.findOneAndUpdate(
-            { _id: itemId, inStock: true },
-            { $set: { inStock: false, lastBoughtBy: nextBuyer.userId } },
-            { new: true }
-        );
-    
+
+        // Переход к следующему покупателю по кругу
+        const nextIndex = (item.currentBuyerIndex + 1) % item.buyerQueue.length;
+        const nextBuyerId = item.buyerQueue[nextIndex];
+        const nextBuyer = users.find(u => u.userId === nextBuyerId);
+
+        if (!nextBuyer) {
+            return bot.sendMessage(chatId, '❌ Не удалось определить следующего покупателя.');
+        }
+
+        item.inStock = false;
+        item.currentBuyerIndex = nextIndex;
+        await item.save();
+
         try {
             await bot.deleteMessage(chatId, msgId);
         } catch (err) {
             console.warn('⚠️ Не удалось удалить сообщение с кнопками:', err.message);
         }
-    
-        await bot.sendMessage(GROUP_ID, `📢 *${updated.name}* закончился!\n🛒 Купить должен: *${nextBuyer.name}*`, {
+
+        await bot.sendMessage(GROUP_ID, `📢 *${item.name}* закончился!\n🛒 Купить должен: *${nextBuyer.name}*`, {
             parse_mode: 'Markdown'
         });
-    
-        return bot.answerCallbackQuery(query.id, { text: '✅ Отмечено как "не в наличии"' });
-    }    
 
-    // ✅ Обработка кнопки "Я купил"
+        return bot.answerCallbackQuery(query.id, { text: '✅ Отмечено как "не в наличии"' });
+    }
+
+    // 🛍️ Обработка кнопки "Я купил"
     if (data.startsWith('markbought_')) {
         const itemId = data.replace('markbought_', '');
 
-        const item = await Item.findOneAndUpdate(
-            { _id: itemId, inStock: false },
-            { $set: { inStock: true } },
-            { new: true }
-        );
-
-        if (!item) {
-            return bot.answerCallbackQuery(query.id, { text: '❌ Уже куплено или не найдено.' });
+        const item = await Item.findOne({ _id: itemId, inStock: false });
+        if (!item || !Array.isArray(item.buyerQueue)) {
+            return bot.answerCallbackQuery(query.id, { text: '❌ Предмет не найден или очередь пуста.' });
         }
+
+        const expectedBuyerId = item.buyerQueue[item.currentBuyerIndex];
+
+        if (userId !== expectedBuyerId) {
+            return bot.answerCallbackQuery(query.id, {
+                text: '⛔ Вы не тот, кто должен купить эту вещь.',
+                show_alert: true
+            });
+        }
+
+        // Обновляем: вещь теперь в наличии, переход к следующему в очереди
+        const nextIndex = (item.currentBuyerIndex + 1) % item.buyerQueue.length;
+        item.inStock = true;
+        item.currentBuyerIndex = nextIndex;
+        await item.save();
 
         try {
             await bot.deleteMessage(chatId, msgId);
@@ -335,10 +355,9 @@ bot.on('callback_query', async (query) => {
         return bot.answerCallbackQuery(query.id, { text: '✅ Отмечено как куплено' });
     }
 
-    // 📛 Непонятное действие
-    bot.answerCallbackQuery(query.id, { text: '🤷 Неизвестная кнопка' });
+    // 🚫 Неизвестная кнопка
+    return bot.answerCallbackQuery(query.id, { text: '🤷 Неизвестная кнопка' });
 });
-
 
 
 module.exports = bot;
