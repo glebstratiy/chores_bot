@@ -123,31 +123,63 @@ ${assignedTasks.join('\n')}`, { parse_mode: 'Markdown' });
 
 // Автоматическое назначение задач по пятницам в 18:00
 cron.schedule('0 18 * * 5', async () => {
-    await assignTasks();
+    const now = new Date();
+
+    const currentDay = now.getDate();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+
+    // Находим последнюю пятницу текущего месяца
+    let lastDayOfMonth = new Date(currentYear, currentMonth + 1, 0); // последний день месяца
+    while (lastDayOfMonth.getDay() !== 5) { // 5 — пятница
+        lastDayOfMonth.setDate(lastDayOfMonth.getDate() - 1);
+    }
+
+    // Если сегодня последняя пятница — запускаем распределение
+    if (
+        now.getDate() === lastDayOfMonth.getDate() &&
+        now.getMonth() === lastDayOfMonth.getMonth() &&
+        now.getFullYear() === lastDayOfMonth.getFullYear()
+    ) {
+        await assignTasks();
+        bot.sendMessage(GROUP_ID, '📢 Назначены задачи на выходные!');
+    }
 }, {
     timezone: "Europe/Kiev"
 });
+
 
 // Автообновление статуса задач в понедельник в 00:00
 cron.schedule('0 0 * * 1', async () => {
-    const overdueTasks = await Task.find({ completed: false });
-    for (const task of overdueTasks) {
-        await User.findOneAndUpdate({ userId: task.assignedTo }, { $inc: { points: -1 } });
-    }
-    await Task.updateMany({}, { completed: false, assignedTo: null });
-    bot.sendMessage(GROUP_ID, '⏳ Все задачи сброшены, новая неделя началась!');
-}, {
-    timezone: "Europe/Kiev"
-});
+    const now = new Date();
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 2); // Пятница
 
-// 🕛 Сброс очков в 00:00 первого дня каждого месяца
-cron.schedule('0 0 1 * *', async () => {
-    try {
-        await User.updateMany({}, { points: 0 });
-        console.log('✅ Все очки сброшены до 0!');
-        bot.sendMessage(GROUP_ID, '🔄 Новый месяц! Все очки сброшены до 0.');
-    } catch (error) {
-        console.error('❌ Ошибка при сбросе очков:', error);
+    const currentMonth = yesterday.getMonth();
+    const currentYear = yesterday.getFullYear();
+
+    // Находим последнюю пятницу в этом месяце
+    let lastFriday = new Date(currentYear, currentMonth + 1, 0);
+    while (lastFriday.getDay() !== 5) {
+        lastFriday.setDate(lastFriday.getDate() - 1);
+    }
+
+    // Сравниваем с пятницей, которая была 2 дня назад
+    if (
+        yesterday.getDate() === lastFriday.getDate() &&
+        yesterday.getMonth() === lastFriday.getMonth() &&
+        yesterday.getFullYear() === lastFriday.getFullYear()
+    ) {
+        // Это понедельник после "тех самых" выходных — пора сбрасывать задачи и начислять/снимать баллы
+        const overdueTasks = await Task.find({ completed: false });
+        for (const task of overdueTasks) {
+            await User.findOneAndUpdate({ userId: task.assignedTo }, { $inc: { points: -1 } });
+        }
+        await Task.updateMany({}, { completed: false, assignedTo: null });
+
+        bot.sendMessage(GROUP_ID, '📅 Выходные закончились! Задачи сброшены, невыполненные – минус балл.');
+    } else {
+        console.log('⏳ Это не понедельник после последних выходных месяца — задачи не сбрасываются.');
     }
 }, {
     timezone: "Europe/Kiev"

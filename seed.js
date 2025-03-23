@@ -46,7 +46,7 @@ const Item = mongoose.model('Item', new mongoose.Schema({
 
   for (const name of itemNames) {
     const queue = shuffle(userIds);
-    const inStock = Math.random() > 0.3; // 70% в наличии, 30% нет
+    const inStock = true;
     const currentBuyerIndex = Math.floor(Math.random() * queue.length);
 
     await Item.create({
