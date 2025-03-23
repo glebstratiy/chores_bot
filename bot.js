@@ -7,7 +7,7 @@ const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 const GROUP_ID = process.env.GROUP_ID;
 
 
-await mongoose.connect('mongodb+srv://admin:admin@cluster0.clzvh.mongodb.net/');
+mongoose.connect('mongodb+srv://admin:admin@cluster0.clzvh.mongodb.net/');
 
 bot.setMyCommands([
     { command: '/sync_users', description: 'Синхронизировать участников' },
